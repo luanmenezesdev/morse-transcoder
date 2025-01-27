@@ -41,14 +41,14 @@ if (PICO_CYW43_SUPPORTED) # Ensures Pico W-specific build
     if (NOT TARGET pico_cyw43_arch)
         message("Skipping build as support is not available")
     else()
-        # Define Wi-Fi SSID and password directly in the CMake file
-        set(WIFI_SSID "MENEZES(giganet)")
-        set(WIFI_PASSWORD "17134529")
+        # Retrieve Wi-Fi SSID and password from environment variables
+        set(WIFI_SSID $ENV{WIFI_SSID})
+        set(WIFI_PASSWORD $ENV{WIFI_PASSWORD})
 
         if ("${WIFI_SSID}" STREQUAL "")
-            message(FATAL_ERROR "WIFI_SSID is not defined")
+            message(FATAL_ERROR "WIFI_SSID environment variable is not defined")
         elseif ("${WIFI_PASSWORD}" STREQUAL "")
-            message(FATAL_ERROR "WIFI_PASSWORD is not defined")
+            message(FATAL_ERROR "WIFI_PASSWORD environment variable is not defined")
         else()
             # Add the executable for the project
             add_executable(morse_transcoder

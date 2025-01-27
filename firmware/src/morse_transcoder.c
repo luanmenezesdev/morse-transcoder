@@ -45,6 +45,10 @@ volatile uint64_t last_press_time_b = 0;
 mqtt_client_t *mqtt_client;
 ip_addr_t broker_addr;
 
+// Wi-Fi Variables (fetched from environment)
+char *wifi_ssid;
+char *wifi_password;
+
 // MQTT Connection Callback
 static void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_status_t status)
 {
@@ -188,6 +192,10 @@ int main()
     // Set Shared GPIO Interrupt
     gpio_set_irq_enabled_with_callback(BUTTON_A_PIN, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
     gpio_set_irq_enabled(BUTTON_B_PIN, GPIO_IRQ_EDGE_FALL, true);
+
+    // Fetch Wi-Fi credentials from environment variables
+    wifi_ssid = getenv("WIFI_SSID");
+    wifi_password = getenv("WIFI_PASSWORD");
 
     // Initialize OLED
     init_oled();
