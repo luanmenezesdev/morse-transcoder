@@ -1,8 +1,12 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
-#include "ss_oled.h"
+#include "hardware/i2c.h"
+
+#include "ssd1306.h"
 #include "morse_decoder.h"
 #include "lwip/apps/mqtt.h"
 #include "lwip/apps/mqtt_priv.h"
@@ -10,27 +14,27 @@
 #include "lwip/err.h"
 #include "lwip/netif.h"
 
-#define GPIO_IRQ_EDGE_RISE (1u << 3)  // Rising edge
-#define GPIO_IRQ_EDGE_FALL (1u << 4)  // Falling edge
+#define GPIO_IRQ_EDGE_RISE (1u << 3) // Rising edge
+#define GPIO_IRQ_EDGE_FALL (1u << 4) // Falling edge
 
 // Pin Definitions
 #define BUTTON_A_PIN 5
 #define BUTTON_B_PIN 6
+#define I2C_SDA_PIN 14
+#define I2C_SCL_PIN 15
 
 // Wi-Fi Configurations
-#define WIFI_SSID "Your-WiFi-SSID"
-#define WIFI_PASSWORD "Your-WiFi-Password"
+#define WIFI_SSID "MENEZES(giganet)"
+#define WIFI_PASSWORD "17134529"
 
 // MQTT Configurations
 #define MQTT_BROKER "broker.hivemq.com"
-#define MQTT_PORT 1883
 #define MQTT_TOPIC "morse-transcoder/chat"
 
 // OLED Configuration
-#define SDA_PIN 16
-#define SCL_PIN 17
-#define RESET_PIN -1
-SSOLED oled;
+ssd1306_t oled;
+uint8_t oled_buffer[ssd1306_buffer_length];
+struct render_area frame_area;
 
 // Global Variables
 volatile char morse_buffer[64] = {0};   // Holds the current Morse code sequence
@@ -57,8 +61,7 @@ static void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection
 // Publish a message via MQTT
 void mqtt_publish_message(const char *message)
 {
-    err_t err;
-    err = mqtt_publish(mqtt_client, MQTT_TOPIC, message, strlen(message), 0, 0, NULL, NULL);
+    err_t err = mqtt_publish(mqtt_client, MQTT_TOPIC, message, strlen(message), 0, 0, NULL, NULL);
     if (err == ERR_OK)
     {
         printf("Message published: %s\n", message);
@@ -80,30 +83,40 @@ void init_mqtt()
     }
 
     ipaddr_aton(MQTT_BROKER, &broker_addr);
-    mqtt_connect(mqtt_client, &broker_addr, MQTT_PORT, mqtt_connection_cb, NULL, NULL);
+    mqtt_client_connect(mqtt_client, &broker_addr, 1883, mqtt_connection_cb, NULL, NULL);
 }
 
 // Initialize OLED
 void init_oled()
 {
-    int rc = oledInit(&oled, OLED_128x64, 0x3c, 0, 0, 1, SDA_PIN, SCL_PIN, RESET_PIN, 1000000L);
-    if (rc == OLED_NOT_FOUND)
-    {
-        printf("OLED initialization failed.\n");
-    }
-    else
-    {
-        printf("OLED initialized successfully.\n");
-    }
+    i2c_init(i2c1, ssd1306_i2c_clock * 1000);
+    gpio_set_function(I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA_PIN);
+    gpio_pull_up(I2C_SCL_PIN);
+
+    ssd1306_init();
+
+    frame_area.start_column = 0;
+    frame_area.end_column = ssd1306_width - 1;
+    frame_area.start_page = 0;
+    frame_area.end_page = ssd1306_n_pages - 1;
+
+    calculate_render_area_buffer_length(&frame_area);
+
+    memset(oled_buffer, 0, ssd1306_buffer_length);
+    render_on_display(oled_buffer, &frame_area);
 }
 
 // Update OLED Display
 void update_oled(const char *phrase)
 {
-    oledFill(&oled, 0, 1);                                              // Clear display
-    oledWriteString(&oled, 0, 0, 0, (char *)phrase, FONT_NORMAL, 0, 1); // Show phrase
-    oledDumpBuffer(&oled, NULL);                                        // Refresh OLED
+    memset(oled_buffer, 0, ssd1306_buffer_length);
+    ssd1306_draw_string(oled_buffer, 0, 0, (char *)phrase);
+    ssd1306_send_data(&oled);
     printf("OLED updated: %s\n", phrase);
+
+    render_on_display(oled_buffer, &frame_area);
 }
 
 // Shared GPIO Callback
@@ -114,35 +127,44 @@ void gpio_callback(uint gpio, uint32_t events)
     if (gpio == BUTTON_A_PIN && current_time - last_press_time_a > 200)
     { // Debounce Button A
         last_press_time_a = current_time;
-        strncat((char *)morse_buffer, ".", sizeof(morse_buffer) - strlen(morse_buffer) - 1);
+        strncat((char *)morse_buffer, ".", sizeof(morse_buffer) - strlen((const char *)morse_buffer) - 1);
         printf("Dot detected. Morse Buffer: %s\n", morse_buffer);
     }
 
     if (gpio == BUTTON_B_PIN && current_time - last_press_time_b > 200)
     { // Debounce Button B
         last_press_time_b = current_time;
-        strncat((char *)morse_buffer, "_", sizeof(morse_buffer) - strlen(morse_buffer) - 1);
+        strncat((char *)morse_buffer, "_", sizeof(morse_buffer) - strlen((const char *)morse_buffer) - 1);
         printf("Dash detected. Morse Buffer: %s\n", morse_buffer);
     }
 }
 
 // Connect to Wi-Fi
-void connect_to_wifi() {
+void connect_to_wifi()
+{
     printf("Connecting to Wi-Fi...\n");
-    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
+    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000))
+    {
         printf("Failed to connect to Wi-Fi.\n");
-    } else {
+    }
+    else
+    {
         printf("Wi-Fi connected successfully!\n");
 
-        // Get the IP address from the default network interface
-        if (netif_default) {
+        if (netif_default)
+        {
             const ip4_addr_t *ip = netif_ip4_addr(netif_default);
-            if (ip) {
+            if (ip)
+            {
                 printf("IP Address: %s\n", ip4addr_ntoa(ip));
-            } else {
+            }
+            else
+            {
                 printf("Failed to retrieve IP address.\n");
             }
-        } else {
+        }
+        else
+        {
             printf("No default network interface available.\n");
         }
     }
@@ -198,7 +220,7 @@ int main()
             }
             else
             {
-                size_t len = strlen(phrase_buffer);
+                size_t len = strlen((const char *)phrase_buffer);
                 if (len < sizeof(phrase_buffer) - 1)
                 {
                     phrase_buffer[len] = decoded_char; // Append character

@@ -12,7 +12,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
+set(PICO_BOARD pico_w CACHE STRING "Board type")
 
 cmake_minimum_required(VERSION 3.12)
 
@@ -41,22 +41,21 @@ if (PICO_CYW43_SUPPORTED) # Ensures Pico W-specific build
     if (NOT TARGET pico_cyw43_arch)
         message("Skipping build as support is not available")
     else()
-        # Define Wi-Fi SSID and password as build-time variables
-        set(WIFI_SSID "${WIFI_SSID}" CACHE INTERNAL "WiFi SSID")
-        set(WIFI_PASSWORD "${WIFI_PASSWORD}" CACHE INTERNAL "WiFi password")
+        # Define Wi-Fi SSID and password directly in the CMake file
+        set(WIFI_SSID "MENEZES(giganet)")
+        set(WIFI_PASSWORD "17134529")
 
         if ("${WIFI_SSID}" STREQUAL "")
-            message("Skipping build as WIFI_SSID is not defined")
+            message(FATAL_ERROR "WIFI_SSID is not defined")
         elseif ("${WIFI_PASSWORD}" STREQUAL "")
-            message("Skipping build as WIFI_PASSWORD is not defined")
+            message(FATAL_ERROR "WIFI_PASSWORD is not defined")
         else()
             # Add the executable for the project
             add_executable(morse_transcoder
-                src/main.c
-                src/mqtt_client.c
+                src/morse_transcoder.c
                 src/BitBang_I2C.c
                 src/morse_decoder.c
-                src/ss_oled.c
+                src/ssd1306_i2c.c
             )
 
             # Enable USB output, disable UART output
@@ -74,6 +73,7 @@ if (PICO_CYW43_SUPPORTED) # Ensures Pico W-specific build
             target_include_directories(morse_transcoder PRIVATE
                 ${CMAKE_CURRENT_LIST_DIR}/src
                 ${CMAKE_CURRENT_LIST_DIR}/include
+                ${PICO_SDK_PATH}/lib/mbedtls/include
             )
 
             # Link required libraries for LWIP MQTT and TLS functionality
@@ -81,7 +81,10 @@ if (PICO_CYW43_SUPPORTED) # Ensures Pico W-specific build
                 pico_cyw43_arch_lwip_poll
                 pico_stdlib
                 pico_lwip_mbedtls
-                pico_mbedtls
+                pico_lwip_mqtt
+                pico_stdlib
+                hardware_gpio
+                hardware_i2c
                 pico_lwip_mqtt
             )
 

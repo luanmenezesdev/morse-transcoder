@@ -39,5 +39,11 @@
     "cmake.buildEnvironment": {
         "WIFI_SSID": "MENEZES(giganet)",
         "WIFI_PASSWORD": "17134529"
+    },
+    "files.associations": {
+        "netif.h": "c",
+        "stdio.h": "c",
+        "cyw43_arch.h": "c",
+        "gpio.h": "c"
     }
 }
