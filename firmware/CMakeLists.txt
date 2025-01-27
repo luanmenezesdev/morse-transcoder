@@ -1,14 +1,3 @@
-# Generated Cmake Pico project file
-
-cmake_minimum_required(VERSION 3.13)
-
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Initialise pico_sdk from installed location
-# (note this can come from environment, CMake cache etc)
-
 # == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
 if(WIN32)
     set(USERHOME $ENV{USERPROFILE})
@@ -23,52 +12,81 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico_w CACHE STRING "Board type")
+set(PICO_BOARD pico CACHE STRING "Board type")
 
-# Pull in Raspberry Pi Pico SDK (must be before project)
+cmake_minimum_required(VERSION 3.12)
+
+# Pull in SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(morse-transcoder C CXX ASM)
+project(morse_transcoder C CXX ASM)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
-# Initialise the Raspberry Pi Pico SDK
+if (PICO_SDK_VERSION_STRING VERSION_LESS "1.3.0")
+    message(FATAL_ERROR "Raspberry Pi Pico SDK version 1.3.0 (or later) required. Your version is ${PICO_SDK_VERSION_STRING}")
+endif()
+
+# Initialize the SDK
 pico_sdk_init()
 
-# Add executable. Default name is the project name, version 0.1
-add_executable(morse-transcoder 
-    src/main.c 
-    lib/morse_decoder/morse_decoder.c 
-    lib/ss_oled/ss_oled.c 
-    lib/BitBang_I2C/BitBang_I2C.c
+# Compiler options
+add_compile_options(-Wall
+    -Wno-format          # Ignore int != int32_t warnings
+    -Wno-unused-function # Ignore unused functions
+    -Wno-maybe-uninitialized
 )
 
-pico_set_program_name(morse-transcoder "morse-transcoder")
-pico_set_program_version(morse-transcoder "0.1")
+if (PICO_CYW43_SUPPORTED) # Ensures Pico W-specific build
+    if (NOT TARGET pico_cyw43_arch)
+        message("Skipping build as support is not available")
+    else()
+        # Define Wi-Fi SSID and password as build-time variables
+        set(WIFI_SSID "${WIFI_SSID}" CACHE INTERNAL "WiFi SSID")
+        set(WIFI_PASSWORD "${WIFI_PASSWORD}" CACHE INTERNAL "WiFi password")
 
-# Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(morse-transcoder 0)
-pico_enable_stdio_usb(morse-transcoder 1)
+        if ("${WIFI_SSID}" STREQUAL "")
+            message("Skipping build as WIFI_SSID is not defined")
+        elseif ("${WIFI_PASSWORD}" STREQUAL "")
+            message("Skipping build as WIFI_PASSWORD is not defined")
+        else()
+            # Add the executable for the project
+            add_executable(morse_transcoder
+                src/main.c
+                src/mqtt_client.c
+                src/BitBang_I2C.c
+                src/morse_decoder.c
+                src/ss_oled.c
+            )
 
-# Add the standard library to the build
-target_link_libraries(morse-transcoder
-    pico_stdlib
-    hardware_i2c
-    hardware_timer
-    pico_cyw43_arch_lwip_threadsafe_background
-)
+            # Enable USB output, disable UART output
+            pico_enable_stdio_usb(morse_transcoder 0)
+            pico_enable_stdio_uart(morse_transcoder 1)
 
-# Add include directories for the libraries
-target_include_directories(morse-transcoder PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/src
-    ${CMAKE_CURRENT_LIST_DIR}/lib/morse_decoder
-    ${CMAKE_CURRENT_LIST_DIR}/lib/ss_oled
-    ${CMAKE_CURRENT_LIST_DIR}/lib/BitBang_I2C
-)
+            # Define preprocessor macros for Wi-Fi credentials
+            target_compile_definitions(morse_transcoder PRIVATE
+                WIFI_SSID=\"${WIFI_SSID}\"
+                WIFI_PASSWORD=\"${WIFI_PASSWORD}\"
+                NO_SYS=1
+            )
 
-# Add any user requested libraries
-target_link_libraries(morse-transcoder 
-    pico_stdlib
-    hardware_i2c
-    hardware_timer
-)
+            # Include directories for the project
+            target_include_directories(morse_transcoder PRIVATE
+                ${CMAKE_CURRENT_LIST_DIR}/src
+                ${CMAKE_CURRENT_LIST_DIR}/include
+            )
 
-pico_add_extra_outputs(morse-transcoder)
+            # Link required libraries for LWIP MQTT and TLS functionality
+            target_link_libraries(morse_transcoder
+                pico_cyw43_arch_lwip_poll
+                pico_stdlib
+                pico_lwip_mbedtls
+                pico_mbedtls
+                pico_lwip_mqtt
+            )
+
+            # Ensure additional outputs are added for the program
+            pico_add_extra_outputs(morse_transcoder)
+        endif()
+    endif()
+endif()
