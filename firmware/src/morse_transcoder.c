@@ -23,12 +23,7 @@
 #define I2C_SDA_PIN 14
 #define I2C_SCL_PIN 15
 
-// Wi-Fi Configurations
-#define WIFI_SSID "MENEZES(giganet)"
-#define WIFI_PASSWORD "17134529"
-
 // MQTT Configurations
-#define MQTT_BROKER "broker.hivemq.com"
 #define MQTT_TOPIC "morse-transcoder/chat"
 
 // OLED Configuration
@@ -48,6 +43,19 @@ ip_addr_t broker_addr;
 // Wi-Fi Variables (fetched from environment)
 char *wifi_ssid;
 char *wifi_password;
+char *mqtt_broker;
+
+// MQTT Client Info
+static const struct mqtt_connect_client_info_t mqtt_client_info = {
+    .client_id = "PicoWMorse", // Unique client ID
+    .client_user = NULL,       // Username (optional, NULL if not used)
+    .client_pass = NULL,       // Password (optional, NULL if not used)
+    .keep_alive = 60,          // Keep-alive interval in seconds
+    .will_topic = NULL,        // Last will topic (optional)
+    .will_msg = NULL,          // Last will message (optional)
+    .will_retain = 0,          // Last will retain flag
+    .will_qos = 0              // Last will QoS level
+};
 
 // MQTT Connection Callback
 static void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_status_t status)
@@ -58,36 +66,53 @@ static void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection
     }
     else
     {
-        printf("MQTT connection failed with status %d.\n", status);
+        printf("MQTT connection failed with status: %d\n", status);
     }
 }
 
-// Publish a message via MQTT
+// Publish a Message
 void mqtt_publish_message(const char *message)
 {
-    err_t err = mqtt_publish(mqtt_client, MQTT_TOPIC, message, strlen(message), 0, 0, NULL, NULL);
-    if (err == ERR_OK)
+    err_t result = mqtt_publish(mqtt_client, MQTT_TOPIC, message, strlen(message), 0, 0, NULL, NULL);
+    if (result == ERR_OK)
     {
         printf("Message published: %s\n", message);
     }
     else
     {
-        printf("Failed to publish message. Error: %d\n", err);
+        printf("Failed to publish message. Error: %d\n", result);
     }
 }
 
 // Initialize MQTT
 void init_mqtt()
 {
+    ip_addr_t broker_ip;
+
+    // Create a new MQTT client
     mqtt_client = mqtt_client_new();
-    if (mqtt_client == NULL)
+    if (!mqtt_client)
     {
         printf("Failed to create MQTT client.\n");
         return;
     }
 
-    ipaddr_aton(MQTT_BROKER, &broker_addr);
-    mqtt_client_connect(mqtt_client, &broker_addr, 1883, mqtt_connection_cb, NULL, NULL);
+    // Resolve the broker IP
+    if (!ip4addr_aton(mqtt_broker, &broker_ip))
+    {
+        printf("Failed to resolve broker IP address: %s\n", mqtt_broker);
+        return;
+    }
+
+    // Connect to the MQTT broker
+    err_t err = mqtt_client_connect(mqtt_client, &broker_ip, 1883, mqtt_connection_cb, NULL, &mqtt_client_info);
+    if (err != ERR_OK)
+    {
+        printf("Failed to initiate MQTT connection. Error: %d\n", err);
+        return;
+    }
+
+    printf("Connecting to MQTT broker at %s:%d...\n", mqtt_broker, 1883);
 }
 
 // Initialize OLED
@@ -147,7 +172,7 @@ void gpio_callback(uint gpio, uint32_t events)
 void connect_to_wifi()
 {
     printf("Connecting to Wi-Fi...\n");
-    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000))
+    if (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_password, CYW43_AUTH_WPA2_AES_PSK, 30000))
     {
         printf("Failed to connect to Wi-Fi.\n");
     }
@@ -193,9 +218,10 @@ int main()
     gpio_set_irq_enabled_with_callback(BUTTON_A_PIN, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
     gpio_set_irq_enabled(BUTTON_B_PIN, GPIO_IRQ_EDGE_FALL, true);
 
-    // Fetch Wi-Fi credentials from environment variables
+    // Fetch environment variables
     wifi_ssid = getenv("WIFI_SSID");
     wifi_password = getenv("WIFI_PASSWORD");
+    mqtt_broker = getenv("MQTT_BROKER");
 
     // Initialize OLED
     init_oled();

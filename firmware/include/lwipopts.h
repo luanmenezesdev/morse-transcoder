@@ -22,6 +22,7 @@
 #define MEM_SIZE                    4000
 #define MEMP_NUM_TCP_SEG            32
 #define MEMP_NUM_ARP_QUEUE          10
+#define MEMP_NUM_SYS_TIMEOUT        20
 #define PBUF_POOL_SIZE              24
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
@@ -57,6 +58,7 @@
 #define LWIP_STATS_DISPLAY          1
 #endif
 
+#define MQTT_DEBUG                LWIP_DBG_ON
 #define ETHARP_DEBUG                LWIP_DBG_OFF
 #define NETIF_DEBUG                 LWIP_DBG_OFF
 #define PBUF_DEBUG                  LWIP_DBG_OFF

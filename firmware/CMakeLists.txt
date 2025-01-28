@@ -53,7 +53,6 @@ if (PICO_CYW43_SUPPORTED) # Ensures Pico W-specific build
             # Add the executable for the project
             add_executable(morse_transcoder
                 src/morse_transcoder.c
-                src/BitBang_I2C.c
                 src/morse_decoder.c
                 src/ssd1306_i2c.c
             )
@@ -73,19 +72,15 @@ if (PICO_CYW43_SUPPORTED) # Ensures Pico W-specific build
             target_include_directories(morse_transcoder PRIVATE
                 ${CMAKE_CURRENT_LIST_DIR}/src
                 ${CMAKE_CURRENT_LIST_DIR}/include
-                ${PICO_SDK_PATH}/lib/mbedtls/include
             )
 
             # Link required libraries for LWIP MQTT and TLS functionality
             target_link_libraries(morse_transcoder
-                pico_cyw43_arch_lwip_poll
                 pico_stdlib
-                pico_lwip_mbedtls
+                pico_cyw43_arch_lwip_threadsafe_background
                 pico_lwip_mqtt
-                pico_stdlib
                 hardware_gpio
                 hardware_i2c
-                pico_lwip_mqtt
             )
 
             # Ensure additional outputs are added for the program

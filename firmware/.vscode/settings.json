@@ -35,15 +35,5 @@
     "raspberry-pi-pico.cmakeAutoConfigure": true,
     "raspberry-pi-pico.useCmakeTools": false,
     "raspberry-pi-pico.cmakePath": "${HOME}/.pico-sdk/cmake/v3.29.9/bin/cmake",
-    "raspberry-pi-pico.ninjaPath": "${HOME}/.pico-sdk/ninja/v1.12.1/ninja",
-    "cmake.buildEnvironment": {
-        "WIFI_SSID": "MENEZES(giganet)",
-        "WIFI_PASSWORD": "17134529"
-    },
-    "files.associations": {
-        "netif.h": "c",
-        "stdio.h": "c",
-        "cyw43_arch.h": "c",
-        "gpio.h": "c"
-    }
+    "raspberry-pi-pico.ninjaPath": "${HOME}/.pico-sdk/ninja/v1.12.1/ninja"
 }
