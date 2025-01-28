@@ -8,57 +8,57 @@ char decode_morse(const char *morse)
 
     // Letters
     if (strcmp(morse, "._") == 0)
-        return 'a';
+        return 'A';
     if (strcmp(morse, "_...") == 0)
-        return 'b';
+        return 'B';
     if (strcmp(morse, "_._.") == 0)
-        return 'c';
+        return 'C';
     if (strcmp(morse, "_..") == 0)
-        return 'd';
+        return 'D';
     if (strcmp(morse, ".") == 0)
-        return 'e';
+        return 'E';
     if (strcmp(morse, ".._.") == 0)
-        return 'f';
+        return 'F';
     if (strcmp(morse, "__.") == 0)
-        return 'g';
+        return 'G';
     if (strcmp(morse, "....") == 0)
-        return 'h';
+        return 'H';
     if (strcmp(morse, "..") == 0)
-        return 'i';
+        return 'I';
     if (strcmp(morse, ".___") == 0)
-        return 'j';
+        return 'J';
     if (strcmp(morse, "_._") == 0)
-        return 'k';
+        return 'K';
     if (strcmp(morse, "._..") == 0)
-        return 'l';
+        return 'L';
     if (strcmp(morse, "__") == 0)
-        return 'm';
+        return 'M';
     if (strcmp(morse, "_.") == 0)
-        return 'n';
+        return 'N';
     if (strcmp(morse, "___") == 0)
-        return 'o';
+        return 'O';
     if (strcmp(morse, ".__.") == 0)
-        return 'p';
+        return 'P';
     if (strcmp(morse, "__._") == 0)
-        return 'q';
+        return 'Q';
     if (strcmp(morse, "._.") == 0)
-        return 'r';
+        return 'R';
     if (strcmp(morse, "...") == 0)
-        return 's';
+        return 'S';
     if (strcmp(morse, "_") == 0)
-        return 't';
+        return 'T';
     if (strcmp(morse, ".._") == 0)
-        return 'u';
+        return 'U';
     if (strcmp(morse, "..._") == 0)
-        return 'v';
+        return 'V';
     if (strcmp(morse, ".__") == 0)
-        return 'w';
+        return 'W';
     if (strcmp(morse, "_.._") == 0)
-        return 'x';
+        return 'X';
     if (strcmp(morse, "_.__") == 0)
-        return 'y';
+        return 'Y';
     if (strcmp(morse, "__..") == 0)
-        return 'z';
+        return 'Z';
 
     // Numbers
     if (strcmp(morse, "_____") == 0)

@@ -49,7 +49,7 @@ pico_generate_pio_header(morse_transcoder ${CMAKE_CURRENT_LIST_DIR}/morse_transc
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(morse_transcoder 0)
-pico_enable_stdio_usb(morse_transcoder 0)
+pico_enable_stdio_usb(morse_transcoder 1)
 
 # Add the standard library to the build
 target_link_libraries(morse_transcoder

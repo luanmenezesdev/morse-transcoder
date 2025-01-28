@@ -61,10 +61,25 @@ void mqtt_send_message(mqtt_client_t *client, const char *message)
     if (result == ERR_OK)
     {
         printf("Message published: %s\n", formatted_message);
+        gpio_put(LED_R_PIN, 1); // Turn on blue LED
+        sleep_ms(500);
+        gpio_put(LED_R_PIN, 0); // Turn off red LED
     }
     else
     {
         printf("Failed to publish message. Error: %d\n", result);
+    }
+}
+
+void mqtt_subscription_cb(void *arg, err_t err)
+{
+    if (err == ERR_OK)
+    {
+        printf("Successfully subscribed to topic.\n");
+    }
+    else
+    {
+        printf("Subscription failed. Error: %d\n", err);
     }
 }
 
@@ -77,6 +92,7 @@ void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_status
 
         // Call the send_message function with the desired message
         mqtt_send_message(client, "Hello from Raspberry Pi Pico W!");
+        mqtt_subscribe(client, MQTT_TOPIC, 1, mqtt_subscription_cb, NULL);
 
         gpio_put(LED_G_PIN, 1); // Turn on green LED
         gpio_put(LED_R_PIN, 0); // Turn off red LED
@@ -98,46 +114,52 @@ void mqtt_incoming_publish_cb(void *arg, const char *topic, u32_t total_length)
 // Data Callback
 void mqtt_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
 {
-    static char incoming_message[256]; // Buffer para armazenar mensagem recebida
+    static char incoming_message[256]; // Buffer to store received message
     static int incoming_message_len = 0;
 
-    // Adicionar dados ao buffer
+    // Ensure no overflow
+    if (incoming_message_len + len >= sizeof(incoming_message))
+    {
+        printf("Error: Message buffer overflow\n");
+        incoming_message_len = 0; // Reset buffer
+        return;
+    }
+
+    // Add incoming data to the buffer
     memcpy(incoming_message + incoming_message_len, data, len);
     incoming_message_len += len;
 
-    // Verificar se a mensagem está completa
+    // Check if the message is complete
     if (flags & MQTT_DATA_FLAG_LAST)
     {
-        incoming_message[incoming_message_len] = '\0'; // Finalizar string
-        printf("Complete message received: %s\n", incoming_message);
+        incoming_message[incoming_message_len] = '\0'; // Null-terminate the string
+        printf("\"\r\nComplete message received: %s\n", incoming_message);
 
-        // Filtrar mensagens enviadas por este dispositivo
+        // Process the message if it doesn't start with "pico: "
         if (strncmp(incoming_message, "pico: ", 6) != 0)
         {
-            strncpy(last_received_message, incoming_message, sizeof(last_received_message) - 1);
-            last_received_message[sizeof(last_received_message) - 1] = '\0'; // Garantir string terminada
+            // Locate the ':' in the incoming message
+            char *colon_pos = strchr(incoming_message, ':');
+            if (colon_pos != NULL)
+            {
+                // Skip the ': ' (colon and space) to get the actual message
+                char *message_part = colon_pos + 2;
+
+                // Copy only the message part to last_received_message
+                strncpy(last_received_message, message_part, sizeof(last_received_message) - 1);
+                last_received_message[sizeof(last_received_message) - 1] = '\0'; // Ensure null-termination
+            }
+            else
+            {
+                // If no ':' found, copy the entire message as a fallback
+                strncpy(last_received_message, incoming_message, sizeof(last_received_message) - 1);
+                last_received_message[sizeof(last_received_message) - 1] = '\0'; // Ensure null-termination
+            }
         }
 
-        // Resetar buffer
+        // Reset the buffer
         incoming_message_len = 0;
     }
-}
-
-// Connect to Wi-Fi
-void connect_to_wifi()
-{
-    printf("Connecting to Wi-Fi...\n");
-    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000))
-    {
-        printf("Failed to connect to Wi-Fi.\n");
-        gpio_put(LED_G_PIN, 0); // Turn off green LED
-        gpio_put(LED_R_PIN, 1); // Turn on red LED
-        while (1)
-            sleep_ms(1000);
-    }
-    printf("Connected to Wi-Fi.\n");
-    gpio_put(LED_G_PIN, 1); // Turn on green LED
-    gpio_put(LED_R_PIN, 0); // Turn off red LED
 }
 
 // Initialize MQTT
@@ -161,9 +183,9 @@ void init_mqtt()
         return;
     }
 
-    mqtt_set_inpub_callback(mqtt_client, mqtt_incoming_publish_cb, mqtt_incoming_data_cb, NULL);
-
     err_t err = mqtt_client_connect(mqtt_client, &broker_ip, MQTT_PORT, mqtt_connection_cb, NULL, &mqtt_client_info);
+
+    mqtt_set_inpub_callback(mqtt_client, mqtt_incoming_publish_cb, mqtt_incoming_data_cb, NULL);
 
     if (err != ERR_OK)
     {
@@ -174,6 +196,23 @@ void init_mqtt()
     }
 
     printf("Connecting to MQTT broker at %s:%d...\n", MQTT_BROKER, MQTT_PORT);
+}
+
+// Connect to Wi-Fi
+void connect_to_wifi()
+{
+    printf("Connecting to Wi-Fi...\n");
+    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000))
+    {
+        printf("Failed to connect to Wi-Fi.\n");
+        gpio_put(LED_G_PIN, 0); // Turn off green LED
+        gpio_put(LED_R_PIN, 1); // Turn on red LED
+        while (1)
+            sleep_ms(1000);
+    }
+    printf("Connected to Wi-Fi.\n");
+    gpio_put(LED_G_PIN, 1); // Turn on green LED
+    gpio_put(LED_R_PIN, 0); // Turn off red LED
 }
 
 // inicializar o OLED
@@ -198,15 +237,33 @@ void init_oled()
     render_on_display(ssd, &frame_area);
 }
 
-// Função para exibir mensagens no OLED
-void display_message(char *line1)
+void display_message(char *message)
 {
-    // Limpa o buffer
+    // Constants for the display
+    const int max_chars_per_line = ssd1306_width / 8.5; // Assuming each character is ~6px wide
+    const int max_lines = ssd1306_n_pages;              // Number of lines (pages) on the display
+
+    // Buffer to store one line of text
+    char line_buffer[max_chars_per_line + 1];
+
+    // Clear the display buffer
     memset(ssd, 0, ssd1306_buffer_length);
 
-    // Desenha as strings
-    ssd1306_draw_string(ssd, 5, 0, line1);
+    // Split the message into lines and render each
+    for (int line = 0; line < max_lines && *message != '\0'; ++line)
+    {
+        // Copy up to `max_chars_per_line` characters to the line buffer
+        strncpy(line_buffer, message, max_chars_per_line);
+        line_buffer[max_chars_per_line] = '\0'; // Ensure null-termination
 
+        // Draw the current line
+        ssd1306_draw_string(ssd, 5, line * 8, line_buffer); // Y-offset: line * 8px
+
+        // Move the pointer in the message to the next chunk
+        message += max_chars_per_line;
+    }
+
+    // Render the updated buffer on the display
     render_on_display(ssd, &frame_area);
 }
 
