@@ -6,6 +6,17 @@
 #include "pico/binary_info.h"
 #include "ssd1306.h"
 #include "hardware/i2c.h"
+#include "pico/cyw43_arch.h"
+#include "lwip/apps/mqtt.h"
+#include "lwip/ip_addr.h"
+
+// Wi-Fi Credentials
+#define WIFI_SSID "MENEZES(giganet)"
+#define WIFI_PASSWORD "17134529"
+
+// MQTT Configuration
+#define MQTT_BROKER "52.57.5.85"
+#define MQTT_TOPIC "morse-transcoder/chat"
 
 #define LED_R_PIN 13
 #define LED_G_PIN 11
@@ -18,6 +29,20 @@
 uint8_t ssd[ssd1306_buffer_length];
 struct render_area frame_area;
 
+// MQTT Client
+mqtt_client_t *mqtt_client;
+
+static const struct mqtt_connect_client_info_t mqtt_client_info = {
+    .client_id = "PicoWLuanMenezes", // Client ID (required)
+    .client_user = NULL,             // Username (optional, NULL if not used)
+    .client_pass = NULL,             // Password (optional, NULL if not used)
+    .keep_alive = 60,                // Keep-alive interval in seconds
+    .will_topic = NULL,              // Last will topic (optional)
+    .will_msg = NULL,                // Last will message (optional)
+    .will_retain = 0,                // Last will retain flag
+    .will_qos = 0                    // Last will QoS level
+};
+
 // inicializar o OLED
 void init_oled() {
     i2c_init(i2c1, ssd1306_i2c_clock * 1000);
@@ -28,7 +53,6 @@ void init_oled() {
 
     ssd1306_init();
 
-    
     frame_area.start_column = 0;
     frame_area.end_column = ssd1306_width - 1;
     frame_area.start_page = 0;
@@ -36,14 +60,13 @@ void init_oled() {
 
     calculate_render_area_buffer_length(&frame_area);
 
-    
     memset(ssd, 0, ssd1306_buffer_length);
     render_on_display(ssd, &frame_area);
 }
 
 // Função para exibir mensagens no OLED
 void display_message(char *line1, char *line2, char *line3) {
-    // Limpa o buffer 
+    // Limpa o buffer
     memset(ssd, 0, ssd1306_buffer_length);
 
     // Desenha as strings
@@ -52,7 +75,7 @@ void display_message(char *line1, char *line2, char *line3) {
         ssd1306_draw_string(ssd, 5, 8, line2);
     }
     if (line3 != NULL) {
-        ssd1306_draw_string(ssd, 5, 16, line3); 
+        ssd1306_draw_string(ssd, 5, 16, line3);
     }
 
     render_on_display(ssd, &frame_area);
@@ -106,7 +129,6 @@ int main() {
     gpio_set_dir(BTN_A_PIN, GPIO_IN);
     gpio_pull_up(BTN_A_PIN);
 
-    
     init_oled();
 
     while (true) {
