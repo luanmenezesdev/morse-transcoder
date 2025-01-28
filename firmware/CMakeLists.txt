@@ -1,3 +1,14 @@
+# Generated Cmake Pico project file
+
+cmake_minimum_required(VERSION 3.13)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Initialise pico_sdk from installed location
+# (note this can come from environment, CMake cache etc)
+
 # == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
 if(WIN32)
     set(USERHOME $ENV{USERPROFILE})
@@ -14,77 +25,51 @@ endif()
 # ====================================================================================
 set(PICO_BOARD pico_w CACHE STRING "Board type")
 
-cmake_minimum_required(VERSION 3.12)
-
-# Pull in SDK (must be before project)
+# Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
 project(morse_transcoder C CXX ASM)
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
 
-if (PICO_SDK_VERSION_STRING VERSION_LESS "1.3.0")
-    message(FATAL_ERROR "Raspberry Pi Pico SDK version 1.3.0 (or later) required. Your version is ${PICO_SDK_VERSION_STRING}")
-endif()
-
-# Initialize the SDK
+# Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# Compiler options
-add_compile_options(-Wall
-    -Wno-format          # Ignore int != int32_t warnings
-    -Wno-unused-function # Ignore unused functions
-    -Wno-maybe-uninitialized
+# Add executable. Default name is the project name, version 0.1
+
+add_executable(morse_transcoder
+        src/morse_transcoder.c
+        src/morse_decoder.c
+        src/ssd1306_i2c.c
 )
 
-if (PICO_CYW43_SUPPORTED) # Ensures Pico W-specific build
-    if (NOT TARGET pico_cyw43_arch)
-        message("Skipping build as support is not available")
-    else()
-        # Retrieve Wi-Fi SSID and password from environment variables
-        set(WIFI_SSID $ENV{WIFI_SSID})
-        set(WIFI_PASSWORD $ENV{WIFI_PASSWORD})
+pico_set_program_name(morse_transcoder "morse_transcoder")
+pico_set_program_version(morse_transcoder "0.1")
 
-        if ("${WIFI_SSID}" STREQUAL "")
-            message(FATAL_ERROR "WIFI_SSID environment variable is not defined")
-        elseif ("${WIFI_PASSWORD}" STREQUAL "")
-            message(FATAL_ERROR "WIFI_PASSWORD environment variable is not defined")
-        else()
-            # Add the executable for the project
-            add_executable(morse_transcoder
-                src/morse_transcoder.c
-                src/morse_decoder.c
-                src/ssd1306_i2c.c
-            )
+# Generate PIO header
+pico_generate_pio_header(morse_transcoder ${CMAKE_CURRENT_LIST_DIR}/morse_transcoder.pio)
 
-            # Enable USB output, disable UART output
-            pico_enable_stdio_usb(morse_transcoder 0)
-            pico_enable_stdio_uart(morse_transcoder 1)
+# Modify the below lines to enable/disable output over UART/USB
+pico_enable_stdio_uart(morse_transcoder 0)
+pico_enable_stdio_usb(morse_transcoder 0)
 
-            # Define preprocessor macros for Wi-Fi credentials
-            target_compile_definitions(morse_transcoder PRIVATE
-                WIFI_SSID=\"${WIFI_SSID}\"
-                WIFI_PASSWORD=\"${WIFI_PASSWORD}\"
-                NO_SYS=1
-            )
+# Add the standard library to the build
+target_link_libraries(morse_transcoder
+        pico_stdlib)
 
-            # Include directories for the project
-            target_include_directories(morse_transcoder PRIVATE
-                ${CMAKE_CURRENT_LIST_DIR}/src
-                ${CMAKE_CURRENT_LIST_DIR}/include
-            )
+# Add the standard include files to the build
+target_include_directories(morse_transcoder PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/include
+)
 
-            # Link required libraries for LWIP MQTT and TLS functionality
-            target_link_libraries(morse_transcoder
-                pico_stdlib
-                pico_cyw43_arch_lwip_threadsafe_background
-                pico_lwip_mqtt
-                hardware_gpio
-                hardware_i2c
-            )
+# Add any user requested libraries
+target_link_libraries(morse_transcoder
+        pico_stdlib
+        pico_cyw43_arch_lwip_threadsafe_background
+        pico_lwip_mqtt
+        hardware_gpio
+        hardware_i2c
+)
 
-            # Ensure additional outputs are added for the program
-            pico_add_extra_outputs(morse_transcoder)
-        endif()
-    endif()
-endif()
+pico_add_extra_outputs(morse_transcoder)
+
