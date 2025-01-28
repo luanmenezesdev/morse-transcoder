@@ -89,48 +89,37 @@ void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_status
     }
 }
 
-// MQTT Incoming Message Callback
-void mqtt_incoming_message_cb(void *arg, const char *topic, u32_t tot_len)
+// Publish Callback
+void mqtt_incoming_publish_cb(void *arg, const char *topic, u32_t total_length)
 {
-    const struct pbuf *p = (const struct pbuf *)arg;
+    printf("Message arrived on topic: %s, length: %d\n", topic, total_length);
+}
 
-    if (p)
+// Data Callback
+void mqtt_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
+{
+    static char incoming_message[256]; // Buffer para armazenar mensagem recebida
+    static int incoming_message_len = 0;
+
+    // Adicionar dados ao buffer
+    memcpy(incoming_message + incoming_message_len, data, len);
+    incoming_message_len += len;
+
+    // Verificar se a mensagem está completa
+    if (flags & MQTT_DATA_FLAG_LAST)
     {
-        char received_message[256] = {0};
-        size_t len = (tot_len < sizeof(received_message) - 1) ? tot_len : sizeof(received_message) - 1;
-        memcpy(received_message, p->payload, len);
-        received_message[len] = '\0'; // Null-terminate
+        incoming_message[incoming_message_len] = '\0'; // Finalizar string
+        printf("Complete message received: %s\n", incoming_message);
 
-        // Split the message into sender and content
-        char *delimiter = strchr(received_message, ':');
-        if (delimiter)
+        // Filtrar mensagens enviadas por este dispositivo
+        if (strncmp(incoming_message, "pico: ", 6) != 0)
         {
-            *delimiter = '\0'; // Replace ':' with '\0' to split sender and content
-            char *sender = received_message;
-            char *content = delimiter + 1;
-
-            // Trim whitespace from content
-            while (*content == ' ')
-                content++;
-
-            printf("Sender: %s, Content: %s\n", sender, content);
-
-            // Only display if the sender is not "pico"
-            if (strcmp(sender, "pico") != 0)
-            {
-                strncpy((char *)last_received_message, content, sizeof(last_received_message) - 1);
-                last_received_message[sizeof(last_received_message) - 1] = '\0'; // Null-terminate
-                printf("Displaying received message: %s\n", last_received_message);
-            }
-            else
-            {
-                printf("Ignored own message.\n");
-            }
+            strncpy(last_received_message, incoming_message, sizeof(last_received_message) - 1);
+            last_received_message[sizeof(last_received_message) - 1] = '\0'; // Garantir string terminada
         }
-        else
-        {
-            printf("Malformed message received: %s\n", received_message);
-        }
+
+        // Resetar buffer
+        incoming_message_len = 0;
     }
 }
 
@@ -172,7 +161,7 @@ void init_mqtt()
         return;
     }
 
-    mqtt_set_inpub_callback(mqtt_client, mqtt_incoming_message_cb, NULL, NULL);
+    mqtt_set_inpub_callback(mqtt_client, mqtt_incoming_publish_cb, mqtt_incoming_data_cb, NULL);
 
     err_t err = mqtt_client_connect(mqtt_client, &broker_ip, MQTT_PORT, mqtt_connection_cb, NULL, &mqtt_client_info);
 
@@ -279,38 +268,51 @@ int main()
 
     while (true)
     {
+        // Poll the Wi-Fi chip
         cyw43_arch_poll();
 
-        // Decode Morse after inactivity
+        // Verificar se o buffer de Morse tem conteúdo e o tempo de inatividade
         if (strlen((const char *)morse_buffer) > 0 &&
             to_ms_since_boot(get_absolute_time()) - last_press_time_a > 1000 &&
             to_ms_since_boot(get_absolute_time()) - last_press_time_b > 1000)
         {
+            // Decodificar o Morse
             char decoded_char = decode_morse((const char *)morse_buffer);
+
             if (decoded_char == '\n')
-            { // Enter detected
+            {
+                // Detecção de ENTER: enviar a mensagem pelo MQTT
                 printf("Enter detected. Publishing message: %s\n", phrase_buffer);
-                mqtt_send_message(mqtt_client, (const char *)phrase_buffer); // Publish the full phrase
-                memset((char *)phrase_buffer, 0, sizeof(phrase_buffer));     // Clear phrase buffer
+                mqtt_send_message(mqtt_client, (const char *)phrase_buffer); // Envia a frase completa
+                memset((char *)phrase_buffer, 0, sizeof(phrase_buffer));     // Limpar o buffer da frase
             }
             else
             {
+                // Adicionar o caractere decodificado ao buffer da frase
                 size_t len = strlen((const char *)phrase_buffer);
                 if (len < sizeof(phrase_buffer) - 1)
                 {
-                    phrase_buffer[len] = decoded_char; // Append character
+                    phrase_buffer[len] = decoded_char;
                     phrase_buffer[len + 1] = '\0';
                 }
             }
+
+            // Exibir a frase em andamento no display
             display_message((char *)phrase_buffer);
-            memset((char *)morse_buffer, 0, sizeof(morse_buffer)); // Clear Morse buffer
-        }
 
-        if (strlen((const char *)last_received_message) > 0 && !(strlen((const char *)phrase_buffer) > 0))
+            // Limpar o buffer de Morse
+            memset((char *)morse_buffer, 0, sizeof(morse_buffer));
+        }
+        else if (strlen((const char *)phrase_buffer) == 0)
         {
-            display_message((char *)last_received_message); // Display the last received message
+            // Se não há mensagem a ser enviada, exibir a última mensagem recebida
+            if (strlen((const char *)last_received_message) > 0)
+            {
+                display_message((char *)last_received_message);
+            }
         }
 
+        // Aguarda um pequeno intervalo para reduzir o uso da CPU
         sleep_ms(10);
     }
 
