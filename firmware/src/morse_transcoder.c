@@ -3,121 +3,23 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include "pico/stdlib.h"
-#include "pico/cyw43_arch.h"
+#include "pico/binary_info.h"
+#include "ssd1306.h"
 #include "hardware/i2c.h"
 
-#include "ssd1306.h"
-#include "morse_decoder.h"
-#include "lwip/apps/mqtt.h"
-#include "lwip/apps/mqtt_priv.h"
-#include "lwip/ip_addr.h"
-#include "lwip/err.h"
-#include "lwip/netif.h"
+#define LED_R_PIN 13
+#define LED_G_PIN 11
+#define LED_B_PIN 12
+#define BTN_A_PIN 5
 
-#define GPIO_IRQ_EDGE_RISE (1u << 3) // Rising edge
-#define GPIO_IRQ_EDGE_FALL (1u << 4) // Falling edge
-
-// Pin Definitions
-#define BUTTON_A_PIN 5
-#define BUTTON_B_PIN 6
 #define I2C_SDA_PIN 14
 #define I2C_SCL_PIN 15
 
-// MQTT Configurations
-#define MQTT_TOPIC "morse-transcoder/chat"
-
-// OLED Configuration
-ssd1306_t oled;
-uint8_t oled_buffer[ssd1306_buffer_length];
+uint8_t ssd[ssd1306_buffer_length];
 struct render_area frame_area;
 
-// Global Variables
-volatile char morse_buffer[64] = {0};   // Holds the current Morse code sequence
-volatile char phrase_buffer[256] = {0}; // Holds the entire phrase
-volatile uint64_t last_press_time_a = 0;
-volatile uint64_t last_press_time_b = 0;
-
-mqtt_client_t *mqtt_client;
-ip_addr_t broker_addr;
-
-// Wi-Fi Variables (fetched from environment)
-char *wifi_ssid;
-char *wifi_password;
-char *mqtt_broker;
-
-// MQTT Client Info
-static const struct mqtt_connect_client_info_t mqtt_client_info = {
-    .client_id = "PicoWMorse", // Unique client ID
-    .client_user = NULL,       // Username (optional, NULL if not used)
-    .client_pass = NULL,       // Password (optional, NULL if not used)
-    .keep_alive = 60,          // Keep-alive interval in seconds
-    .will_topic = NULL,        // Last will topic (optional)
-    .will_msg = NULL,          // Last will message (optional)
-    .will_retain = 0,          // Last will retain flag
-    .will_qos = 0              // Last will QoS level
-};
-
-// MQTT Connection Callback
-static void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_status_t status)
-{
-    if (status == MQTT_CONNECT_ACCEPTED)
-    {
-        printf("MQTT connected successfully.\n");
-    }
-    else
-    {
-        printf("MQTT connection failed with status: %d\n", status);
-    }
-}
-
-// Publish a Message
-void mqtt_publish_message(const char *message)
-{
-    err_t result = mqtt_publish(mqtt_client, MQTT_TOPIC, message, strlen(message), 0, 0, NULL, NULL);
-    if (result == ERR_OK)
-    {
-        printf("Message published: %s\n", message);
-    }
-    else
-    {
-        printf("Failed to publish message. Error: %d\n", result);
-    }
-}
-
-// Initialize MQTT
-void init_mqtt()
-{
-    ip_addr_t broker_ip;
-
-    // Create a new MQTT client
-    mqtt_client = mqtt_client_new();
-    if (!mqtt_client)
-    {
-        printf("Failed to create MQTT client.\n");
-        return;
-    }
-
-    // Resolve the broker IP
-    if (!ip4addr_aton(mqtt_broker, &broker_ip))
-    {
-        printf("Failed to resolve broker IP address: %s\n", mqtt_broker);
-        return;
-    }
-
-    // Connect to the MQTT broker
-    err_t err = mqtt_client_connect(mqtt_client, &broker_ip, 1883, mqtt_connection_cb, NULL, &mqtt_client_info);
-    if (err != ERR_OK)
-    {
-        printf("Failed to initiate MQTT connection. Error: %d\n", err);
-        return;
-    }
-
-    printf("Connecting to MQTT broker at %s:%d...\n", mqtt_broker, 1883);
-}
-
-// Initialize OLED
-void init_oled()
-{
+// inicializar o OLED
+void init_oled() {
     i2c_init(i2c1, ssd1306_i2c_clock * 1000);
     gpio_set_function(I2C_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL_PIN, GPIO_FUNC_I2C);
@@ -126,6 +28,7 @@ void init_oled()
 
     ssd1306_init();
 
+    
     frame_area.start_column = 0;
     frame_area.end_column = ssd1306_width - 1;
     frame_area.start_page = 0;
@@ -133,139 +36,95 @@ void init_oled()
 
     calculate_render_area_buffer_length(&frame_area);
 
-    memset(oled_buffer, 0, ssd1306_buffer_length);
-    render_on_display(oled_buffer, &frame_area);
+    
+    memset(ssd, 0, ssd1306_buffer_length);
+    render_on_display(ssd, &frame_area);
 }
 
-// Update OLED Display
-void update_oled(const char *phrase)
-{
-    memset(oled_buffer, 0, ssd1306_buffer_length);
-    ssd1306_draw_string(oled_buffer, 0, 0, (char *)phrase);
-    ssd1306_send_data(&oled);
-    printf("OLED updated: %s\n", phrase);
+// Função para exibir mensagens no OLED
+void display_message(char *line1, char *line2, char *line3) {
+    // Limpa o buffer 
+    memset(ssd, 0, ssd1306_buffer_length);
 
-    render_on_display(oled_buffer, &frame_area);
+    // Desenha as strings
+    ssd1306_draw_string(ssd, 5, 0, line1);
+    if (line2 != NULL) {
+        ssd1306_draw_string(ssd, 5, 8, line2);
+    }
+    if (line3 != NULL) {
+        ssd1306_draw_string(ssd, 5, 16, line3); 
+    }
+
+    render_on_display(ssd, &frame_area);
 }
 
-// Shared GPIO Callback
-void gpio_callback(uint gpio, uint32_t events)
-{
-    uint64_t current_time = to_ms_since_boot(get_absolute_time());
-
-    if (gpio == BUTTON_A_PIN && current_time - last_press_time_a > 200)
-    { // Debounce Button A
-        last_press_time_a = current_time;
-        strncat((char *)morse_buffer, ".", sizeof(morse_buffer) - strlen((const char *)morse_buffer) - 1);
-        printf("Dot detected. Morse Buffer: %s\n", morse_buffer);
-    }
-
-    if (gpio == BUTTON_B_PIN && current_time - last_press_time_b > 200)
-    { // Debounce Button B
-        last_press_time_b = current_time;
-        strncat((char *)morse_buffer, "_", sizeof(morse_buffer) - strlen((const char *)morse_buffer) - 1);
-        printf("Dash detected. Morse Buffer: %s\n", morse_buffer);
-    }
+void SinalAberto() {
+    gpio_put(LED_R_PIN, 0);
+    gpio_put(LED_G_PIN, 1);
+    gpio_put(LED_B_PIN, 0);
+    display_message("SINAL ABERTO", "ATRAVESSAR COM", "CUIDADO");
 }
 
-// Connect to Wi-Fi
-void connect_to_wifi()
-{
-    printf("Connecting to Wi-Fi...\n");
-    if (cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_password, CYW43_AUTH_WPA2_AES_PSK, 30000))
-    {
-        printf("Failed to connect to Wi-Fi.\n");
-    }
-    else
-    {
-        printf("Wi-Fi connected successfully!\n");
+void SinalAtencao() {
+    gpio_put(LED_R_PIN, 1);
+    gpio_put(LED_G_PIN, 1);
+    gpio_put(LED_B_PIN, 0);
+    display_message("SINAL DE", "ATENCAO", "PREPARE-SE");
+}
 
-        if (netif_default)
-        {
-            const ip4_addr_t *ip = netif_ip4_addr(netif_default);
-            if (ip)
-            {
-                printf("IP Address: %s\n", ip4addr_ntoa(ip));
-            }
-            else
-            {
-                printf("Failed to retrieve IP address.\n");
-            }
+void SinalFechado() {
+    gpio_put(LED_R_PIN, 1);
+    gpio_put(LED_G_PIN, 0);
+    gpio_put(LED_B_PIN, 0);
+    display_message("SINAL FECHADO", "AGUARDE", NULL);
+}
+
+// aguarda entrada
+int WaitWithRead(int timeMS) {
+    for (int i = 0; i < timeMS; i += 100) {
+        int A_state = !gpio_get(BTN_A_PIN);
+        if (A_state == 1) {
+            return 1;
         }
-        else
-        {
-            printf("No default network interface available.\n");
-        }
+        sleep_ms(100);
     }
+    return 0;
 }
 
-int main()
-{
+int main() {
     stdio_init_all();
-    sleep_ms(2000); // Allow USB initialization
-    printf("Program started...\n");
 
-    // Initialize GPIO Pins
-    gpio_init(BUTTON_A_PIN);
-    gpio_set_dir(BUTTON_A_PIN, GPIO_IN);
-    gpio_pull_down(BUTTON_A_PIN);
+    // Inicialização de LEDs e botão
+    gpio_init(LED_R_PIN);
+    gpio_set_dir(LED_R_PIN, GPIO_OUT);
+    gpio_init(LED_G_PIN);
+    gpio_set_dir(LED_G_PIN, GPIO_OUT);
+    gpio_init(LED_B_PIN);
+    gpio_set_dir(LED_B_PIN, GPIO_OUT);
 
-    gpio_init(BUTTON_B_PIN);
-    gpio_set_dir(BUTTON_B_PIN, GPIO_IN);
-    gpio_pull_down(BUTTON_B_PIN);
+    gpio_init(BTN_A_PIN);
+    gpio_set_dir(BTN_A_PIN, GPIO_IN);
+    gpio_pull_up(BTN_A_PIN);
 
-    // Set Shared GPIO Interrupt
-    gpio_set_irq_enabled_with_callback(BUTTON_A_PIN, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
-    gpio_set_irq_enabled(BUTTON_B_PIN, GPIO_IRQ_EDGE_FALL, true);
-
-    // Fetch environment variables
-    wifi_ssid = getenv("WIFI_SSID");
-    wifi_password = getenv("WIFI_PASSWORD");
-    mqtt_broker = getenv("MQTT_BROKER");
-
-    // Initialize OLED
+    
     init_oled();
 
-    // Initialize Wi-Fi
-    if (cyw43_arch_init())
-    {
-        printf("Failed to initialize Wi-Fi chip.\n");
-        return -1;
-    }
-    cyw43_arch_enable_sta_mode();
-    connect_to_wifi();
+    while (true) {
+        SinalAberto();
+        int A_state = WaitWithRead(8000);
 
-    // Initialize MQTT
-    init_mqtt();
+        if (A_state) {
+            SinalAtencao();
+            sleep_ms(5000);
 
-    while (true)
-    {
-        // Decode Morse after inactivity
-        if (strlen((const char *)morse_buffer) > 0 &&
-            to_ms_since_boot(get_absolute_time()) - last_press_time_a > 1000 &&
-            to_ms_since_boot(get_absolute_time()) - last_press_time_b > 1000)
-        {
-            char decoded_char = decode_morse((const char *)morse_buffer);
-            if (decoded_char == '\n')
-            { // Enter detected
-                printf("Enter detected. Publishing message: %s\n", phrase_buffer);
-                mqtt_publish_message((const char *)phrase_buffer);       // Publish the full phrase
-                memset((char *)phrase_buffer, 0, sizeof(phrase_buffer)); // Clear phrase buffer
-            }
-            else
-            {
-                size_t len = strlen((const char *)phrase_buffer);
-                if (len < sizeof(phrase_buffer) - 1)
-                {
-                    phrase_buffer[len] = decoded_char; // Append character
-                    phrase_buffer[len + 1] = '\0';
-                }
-            }
-            update_oled((const char *)phrase_buffer);
-            memset((char *)morse_buffer, 0, sizeof(morse_buffer)); // Clear Morse buffer
+            SinalFechado();
+            sleep_ms(10000);
+        } else {
+            SinalAtencao();
+            sleep_ms(2000);
+
+            SinalFechado();
+            sleep_ms(8000);
         }
-        sleep_ms(10); // Reduce CPU usage
     }
-
-    return 0;
 }
