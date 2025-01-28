@@ -22,7 +22,7 @@
 #define LED_R_PIN 13
 #define LED_G_PIN 11
 #define BTN_A_PIN 5
-#define BTN_B_PIN 5
+#define BTN_B_PIN 6
 
 #define I2C_SDA_PIN 14
 #define I2C_SCL_PIN 15
@@ -33,6 +33,7 @@ struct render_area frame_area;
 // Global Variables
 volatile char morse_buffer[64] = {0};   // Holds the current Morse code sequence
 volatile char phrase_buffer[256] = {0}; // Holds the entire phrase
+char last_received_message[256] = {0};  // Holds the last received message
 volatile uint64_t last_press_time_a = 0;
 volatile uint64_t last_press_time_b = 0;
 
@@ -53,10 +54,13 @@ static const struct mqtt_connect_client_info_t mqtt_client_info = {
 // Function to send a message via MQTT
 void mqtt_send_message(mqtt_client_t *client, const char *message)
 {
-    err_t result = mqtt_publish(client, MQTT_TOPIC, message, strlen(message), 0, 0, NULL, NULL);
+    char formatted_message[256];
+    snprintf(formatted_message, sizeof(formatted_message), "pico: %s", message);
+
+    err_t result = mqtt_publish(client, MQTT_TOPIC, formatted_message, strlen(formatted_message), 0, 0, NULL, NULL);
     if (result == ERR_OK)
     {
-        printf("Message published: %s\n", message);
+        printf("Message published: %s\n", formatted_message);
     }
     else
     {
@@ -72,7 +76,7 @@ void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_status
         printf("MQTT connected successfully.\n");
 
         // Call the send_message function with the desired message
-        mqtt_send_message(client, "pico: Hello from Raspberry Pi Pico W!");
+        mqtt_send_message(client, "Hello from Raspberry Pi Pico W!");
 
         gpio_put(LED_G_PIN, 1); // Turn on green LED
         gpio_put(LED_R_PIN, 0); // Turn off red LED
@@ -82,6 +86,51 @@ void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection_status
         printf("MQTT connection failed with status: %d\n", status);
         gpio_put(LED_G_PIN, 0); // Turn off green LED
         gpio_put(LED_R_PIN, 1); // Turn on red LED
+    }
+}
+
+// MQTT Incoming Message Callback
+void mqtt_incoming_message_cb(void *arg, const char *topic, u32_t tot_len)
+{
+    const struct pbuf *p = (const struct pbuf *)arg;
+
+    if (p)
+    {
+        char received_message[256] = {0};
+        size_t len = (tot_len < sizeof(received_message) - 1) ? tot_len : sizeof(received_message) - 1;
+        memcpy(received_message, p->payload, len);
+        received_message[len] = '\0'; // Null-terminate
+
+        // Split the message into sender and content
+        char *delimiter = strchr(received_message, ':');
+        if (delimiter)
+        {
+            *delimiter = '\0'; // Replace ':' with '\0' to split sender and content
+            char *sender = received_message;
+            char *content = delimiter + 1;
+
+            // Trim whitespace from content
+            while (*content == ' ')
+                content++;
+
+            printf("Sender: %s, Content: %s\n", sender, content);
+
+            // Only display if the sender is not "pico"
+            if (strcmp(sender, "pico") != 0)
+            {
+                strncpy((char *)last_received_message, content, sizeof(last_received_message) - 1);
+                last_received_message[sizeof(last_received_message) - 1] = '\0'; // Null-terminate
+                printf("Displaying received message: %s\n", last_received_message);
+            }
+            else
+            {
+                printf("Ignored own message.\n");
+            }
+        }
+        else
+        {
+            printf("Malformed message received: %s\n", received_message);
+        }
     }
 }
 
@@ -122,6 +171,8 @@ void init_mqtt()
         gpio_put(LED_R_PIN, 1); // Turn on red LED
         return;
     }
+
+    mqtt_set_inpub_callback(mqtt_client, mqtt_incoming_message_cb, NULL, NULL);
 
     err_t err = mqtt_client_connect(mqtt_client, &broker_ip, MQTT_PORT, mqtt_connection_cb, NULL, &mqtt_client_info);
 
@@ -240,7 +291,7 @@ int main()
             { // Enter detected
                 printf("Enter detected. Publishing message: %s\n", phrase_buffer);
                 mqtt_send_message(mqtt_client, (const char *)phrase_buffer); // Publish the full phrase
-                memset((char *)phrase_buffer, 0, sizeof(phrase_buffer)); // Clear phrase buffer
+                memset((char *)phrase_buffer, 0, sizeof(phrase_buffer));     // Clear phrase buffer
             }
             else
             {
@@ -254,6 +305,12 @@ int main()
             display_message((char *)phrase_buffer);
             memset((char *)morse_buffer, 0, sizeof(morse_buffer)); // Clear Morse buffer
         }
+
+        if (strlen((const char *)last_received_message) > 0 && !(strlen((const char *)phrase_buffer) > 0))
+        {
+            display_message((char *)last_received_message); // Display the last received message
+        }
+
         sleep_ms(10);
     }
 

@@ -69,6 +69,7 @@ target_link_libraries(morse_transcoder
         pico_lwip_mqtt
         hardware_gpio
         hardware_i2c
+        hardware_irq
 )
 
 pico_add_extra_outputs(morse_transcoder)
