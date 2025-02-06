@@ -12,8 +12,8 @@
 #include "lwip/ip_addr.h"
 
 // Wi-Fi Credentials
-#define WIFI_SSID "MENEZES(giganet)"
-#define WIFI_PASSWORD "17134529"
+#define WIFI_SSID "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
 // MQTT Configuration
 #define MQTT_BROKER "52.57.5.85"
@@ -61,7 +61,7 @@ void mqtt_send_message(mqtt_client_t *client, const char *message)
     if (result == ERR_OK)
     {
         printf("Message published: %s\n", formatted_message);
-        gpio_put(LED_R_PIN, 1); // Turn on blue LED
+        gpio_put(LED_R_PIN, 1); // Turn on red LED
         sleep_ms(500);
         gpio_put(LED_R_PIN, 0); // Turn off red LED
     }
