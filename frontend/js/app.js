@@ -36,6 +36,7 @@ function addMessageToList(text, type) {
   messageItem.textContent = text;
   messageItem.classList.add("message");
   messageItem.classList.add(type === "sent" ? "sent" : "received");
+  text.toUpperCase().includes("SOS") && messageItem.classList.add("danger");
   messageList.appendChild(messageItem);
   messageList.scrollTop = messageList.scrollHeight; // Auto-scroll to the latest message
 }

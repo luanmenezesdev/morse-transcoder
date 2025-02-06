@@ -74,6 +74,10 @@ header {
   border-bottom-left-radius: 0;
 }
 
+.message.danger {
+  background-color: #ff6471;
+}
+
 footer {
   display: flex;
   padding: 15px;
