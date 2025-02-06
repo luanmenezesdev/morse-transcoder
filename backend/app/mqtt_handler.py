@@ -23,7 +23,7 @@ def on_message(client, userdata, msg):
         message = message.strip()
 
         # Only emit to frontend if the sender is not "frontend"
-        if sender != "frontendy":
+        if sender != "frontend":
             socketio.emit("chat_message", {"message": decoded_message})
             print(f"Message propagated to frontend via WebSocket: {decoded_message}")
         else:
