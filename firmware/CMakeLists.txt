@@ -44,9 +44,6 @@ add_executable(morse_transcoder
 pico_set_program_name(morse_transcoder "morse_transcoder")
 pico_set_program_version(morse_transcoder "0.1")
 
-# Generate PIO header
-pico_generate_pio_header(morse_transcoder ${CMAKE_CURRENT_LIST_DIR}/morse_transcoder.pio)
-
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(morse_transcoder 0)
 pico_enable_stdio_usb(morse_transcoder 1)
